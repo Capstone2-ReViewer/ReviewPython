@@ -18,14 +18,13 @@ import re
 def is_valid_review(text):
     # ✅ 허용된 문자 체크
     if not re.match(r"^[ㄱ-ㅎ가-힣a-zA-Z0-9\s.,!?~()\-\"“”ㅎㅠㅋ^]+$", text.strip()):
-        print(f"❌ 허용되지 않는 문자 포함: {text}")
         return False
 
     # ✅ 최소 길이 필터 (5자 이상)
     stripped_text = text.strip()
     total_len = len(stripped_text)
     if total_len < 5:
-        print(f"❌ 너무 짧은 리뷰: {text}")
+
         return False
 
     # ✅ 영문 비율 필터 (30% 이하)
@@ -34,16 +33,16 @@ def is_valid_review(text):
 
     # 영문 비율이 계산되지 않는 경우 (모든 글자가 특수문자일 때)
     if pure_text_len == 0:
-        print(f"❌ 순수 텍스트 없음: {text}")
+
         return False
 
     # 영문 비율 필터
     ratio = eng_count / pure_text_len
     if ratio > 0.3:
-        print(f"❌ 영문 비율 초과 ({ratio:.2f}): {text}")
+
         return False
 
-    print(f"✅ 통과: {text}")
+
     return True
 
 
@@ -65,60 +64,100 @@ def save_reviews_to_csv(reviews, folder_path, filename):
             ])
     print(f"✅ 리뷰 저장 완료: {filepath}")
 
-def fetch_reviews_with_filter(app_id, language="korean"):
+
+def fetch_reviews_with_filter(app_id, language="korean", day_range=730):
     valid_reviews = []
     filtered_reviews = []
     seen_review_ids = set()
+    seen_cursors = set()
     cursor = "*"
+    review_count = 0
 
     while True:
-        url = (
-            f"https://store.steampowered.com/appreviews/{app_id}"
-            f"?json=1&language={language}&day_range=730&filter=recent&review_type=all"
-            f"&purchase_type=all&num_per_page=100&cursor={cursor}"
-        )
+        try:
+            # ✅ day_range 추가
+            url = (
+                f"https://store.steampowered.com/appreviews/{app_id}"
+                f"?json=1&language={language}&day_range={day_range}&filter=all&review_type=all"
+                f"&purchase_type=all&num_per_page=100&cursor={cursor}"
+            )
 
-        res = requests.get(url)
-        if res.status_code != 200:
-            break
+            print(f"\n🔗 URL 요청: {url}")
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
 
-        data = res.json()
-        reviews = data.get("reviews", [])
-        cursor = data.get("cursor", "*")
+            data = res.json()
+            reviews = data.get("reviews", [])
+            new_cursor = data.get("cursor", "*").strip()
 
-        if not reviews or cursor == "*":
-            break
+            # ✅ 커서가 반복되면 중단
+            if new_cursor in seen_cursors:
+                print(f"\n🛑 동일한 커서 반복 - 종료: {new_cursor}")
+                break
 
-        for r in reviews:
-            review_id = r.get("recommendationid")
-            text = r.get("review", "").strip()
-            timestamp_created = r.get("timestamp_created", 0)
-            voted_up = r.get("voted_up")
-            playtime_forever = r.get("author", {}).get("playtime_forever", 0)
-            weighted_vote_score = r.get("weighted_vote_score", 0.5)
+            # ✅ 커서 기록
+            seen_cursors.add(new_cursor)
+            cursor = new_cursor
 
-            if review_id in seen_review_ids:
-                continue
+            # 더 이상 가져올 리뷰가 없으면 종료
+            if not reviews or cursor == "*":
+                print("\n🛑 더 이상 가져올 리뷰가 없습니다.")
+                break
 
-            seen_review_ids.add(review_id)
+            for r in reviews:
+                try:
+                    review_id = r.get("recommendationid")
+                    if not review_id or review_id in seen_review_ids:
+                        continue
 
-            review_data = {
-                "app_id": app_id,
-                "voted_up": int(voted_up),
-                "weighted_vote_score": float(weighted_vote_score),
-                "playtime_forever": int(playtime_forever),
-                "timestamp_created": int(timestamp_created),
-                "review": text
-            }
+                    seen_review_ids.add(review_id)
 
-            # ✅ 필터 체크 (반대로 저장 문제 수정)
-            if is_valid_review(text):
-                valid_reviews.append(review_data)  # 필터 통과 (unfiltered)
-            else:
-                filtered_reviews.append(review_data)  # 필터 실패 (filtered)
+                    text = r.get("review", "").strip()
 
+                    # ✅ 긴 리뷰 잘라내기 (최대 500자)
+                    if len(text) > 500:
+                        print(f"⚠️ 긴 리뷰 잘림: {text[:50]}... (총 {len(text)}자)")
+                        text = text[:500]
+
+                    timestamp_created = r.get("timestamp_created", 0)
+                    voted_up = r.get("voted_up")
+                    playtime_forever = r.get("author", {}).get("playtime_forever", 0)
+                    weighted_vote_score = r.get("weighted_vote_score", 0.5)
+
+                    review_data = {
+                        "app_id": app_id,
+                        "voted_up": int(voted_up),
+                        "weighted_vote_score": float(weighted_vote_score),
+                        "playtime_forever": int(playtime_forever),
+                        "timestamp_created": int(timestamp_created),
+                        "review": text
+                    }
+
+                    # ✅ 필터 체크 (반대로 저장 문제 수정)
+                    if is_valid_review(text):
+                        valid_reviews.append(review_data)
+                    else:
+                        filtered_reviews.append(review_data)
+
+                    review_count += 1
+                    print(f"📝 리뷰 {review_count} 수집: {text[:50]}... (총 {len(text)}자)")
+
+                except Exception as e:
+                    print(f"⚠️ 리뷰 처리 중 오류: {e}")
+                    continue
+
+            # ✅ 커서 출력 (무한 루프 방지)
+            print(f"🔄 다음 커서: {cursor}")
+
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 요청 실패: {e}")
+            time.sleep(5)
+            continue
+
+        # 딜레이 추가 (서버 부하 방지)
         time.sleep(0.5)
 
+    print(f"\n🚀 총 {review_count}개의 리뷰 수집 완료")
     return valid_reviews, filtered_reviews
 
 

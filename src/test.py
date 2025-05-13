@@ -1,64 +1,61 @@
-import csv
-import os
+import requests
+import time
 from datetime import datetime, timezone
-from steamAPI.review import fetch_reviews_with_filter
 
-# 전체 게임 목록
-GAME_IDS = {
-    "Counter-Strike: Global Offensive": 730,
-    "Dota 2": 570,
-    "PLAYERUNKNOWN'S BATTLEGROUNDS": 578080,
-    "Apex Legends": 1172470,
-    "Grand Theft Auto V": 271590,
-    "Rust": 252490,
-    "Destiny 2": 1085660,
-    "ARK: Survival Evolved": 346110,
-    "Warframe": 230410,
-    "Tom Clancy's Rainbow Six Siege": 359550,
-    "Team Fortress 2": 440,
-    "Garry's Mod": 4000,
-    "Rocket League": 252950
-}
+APP_ID = 271590  # GTA5
+LANGUAGE = "korean"
+DAY_RANGE = 730  # 2년
 
-OUTPUT_DIR = "all_game_reviews"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+def fetch_recent_reviews(app_id, language="korean", day_range=730):
+    seen_review_ids = set()
+    cursor = "*"
+    total_reviews = 0
 
+    while True:
+        url = (
+            f"https://store.steampowered.com/appreviews/{app_id}"
+            f"?json=1&language={language}&day_range={day_range}&filter=all&review_type=all"
+            f"&purchase_type=all&num_per_page=100&cursor={cursor}"
+        )
 
-def save_reviews_to_csv(app_id, reviews, filename):
-    # ✅ 파일을 "a" 모드로 열어 데이터 누적
-    with open(filename, mode="a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
+        res = requests.get(url)
+        if res.status_code != 200:
+            print(f"❌ 요청 실패: {res.status_code}")
+            break
 
-        # 파일이 비어 있으면 헤더 추가
-        if os.stat(filename).st_size == 0:
-            writer.writerow(["app_id", "timestamp_created", "year_month", "playtime_forever", "final_score"])  # 컬럼명
+        data = res.json()
+        reviews = data.get("reviews", [])
+        cursor = data.get("cursor", "*")
 
-        for review in reviews:
-            # 리뷰 데이터 추출
-            timestamp = review["timestamp_created"]
-            year_month = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m")
-            playtime_forever = review["playtime_forever"]
-            final_score = 50  # 기본 점수 (수정 가능)
+        # 더 이상 가져올 리뷰가 없으면 종료
+        if not reviews or cursor == "*":
+            break
 
-            # 데이터 저장
-            writer.writerow([app_id, timestamp, year_month, playtime_forever, final_score])
+        for r in reviews:
+            review_id = r.get("recommendationid")
+            if review_id in seen_review_ids:
+                continue
 
-    print(f"✅ {len(reviews)}개의 리뷰가 '{filename}' 파일로 저장되었습니다.")
+            seen_review_ids.add(review_id)
+
+            # 리뷰 정보
+            timestamp_created = r.get("timestamp_created", 0)
+            date_str = datetime.fromtimestamp(timestamp_created, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            text = r.get("review", "").strip()
+            voted_up = r.get("voted_up")
+            playtime_forever = r.get("author", {}).get("playtime_forever", 0)
+            weighted_vote_score = r.get("weighted_vote_score", 0.5)
+
+            print(f"📝 {date_str} | 추천 여부: {voted_up} | 점수: {weighted_vote_score} | 플레이타임: {playtime_forever}분")
+            print(f"리뷰: {text}")
+            print("-" * 80)
+
+            total_reviews += 1
+
+        time.sleep(0.5)  # 딜레이 추가
+
+    print(f"\n🚀 총 {total_reviews}개의 리뷰 수집 완료")
 
 
 if __name__ == "__main__":
-    for game_name, app_id in GAME_IDS.items():
-        print(f"🔄 {game_name} ({app_id}) 게임의 리뷰 가져오는 중...")
-
-        # ✅ 리뷰 수집
-        valid_reviews, filtered_reviews = fetch_reviews_with_filter(app_id)
-
-        # ✅ 유효 리뷰 저장
-        valid_csv_filename = os.path.join(OUTPUT_DIR, f"{app_id}_valid_reviews.csv")
-        save_reviews_to_csv(app_id, valid_reviews, valid_csv_filename)
-
-        # ✅ 필터된 리뷰도 저장
-        filtered_csv_filename = os.path.join(OUTPUT_DIR, f"{app_id}_filtered_reviews.csv")
-        save_reviews_to_csv(app_id, filtered_reviews, filtered_csv_filename)
-
-        print(f"✅ {game_name} 리뷰 저장 완료 (유효: {len(valid_reviews)}개, 필터됨: {len(filtered_reviews)}개)\n")
+    fetch_recent_reviews(APP_ID, language=LANGUAGE, day_range=DAY_RANGE)

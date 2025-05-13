@@ -19,8 +19,8 @@ def calculate_final_score(voted_up, weighted_vote_score, sentiment_score):
 
     score = (
         (voted_up * 0.4) +
-        (weighted_vote_score * 0.4) +
-        (sentiment_score * 0.2)
+        (weighted_vote_score * 0.35) +
+        (sentiment_score * 0.25)
     ) * 100
 
     if score < 0:
