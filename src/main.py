@@ -1,10 +1,11 @@
 from steamAPI.game_enum import get_game_codes
 from steamAPI.game_info import get_game_info
 from steamAPI.update_dates import get_updates
-from steamAPI.review import fetch_reviews_with_filter
+from steamAPI.review import run_review
 from save_to_db import save_game_info, save_updates, save_score_playtime
 from topic.kcBert import analyze_sentiment_kcbert
 from datetime import datetime, timezone
+
 import time
 import os
 import csv
@@ -36,15 +37,32 @@ def load_reviews_from_csv(file_path, include_text=True):
         headers = next(reader)  # 헤더 건너뛰기
         for row in reader:
             try:
+                # ✅ 필드 개수에 따라 처리 분기
                 if include_text:
-                    app_id, voted_up, weighted_vote_score, playtime_forever, review = row
-                    reviews.append({
-                        "app_id": int(app_id.strip() or 0),
-                        "voted_up": int(voted_up.strip() or 0),
-                        "weighted_vote_score": float(weighted_vote_score.strip() or 0.0),
-                        "playtime_forever": int(playtime_forever.strip() or 0),
-                        "review": review.strip()
-                    })
+                    if len(row) == 6:
+                        app_id, voted_up, weighted_vote_score, playtime_forever, timestamp_created, review = row
+                        reviews.append({
+                            "app_id": int(app_id.strip() or 0),
+                            "voted_up": int(voted_up.strip() or 0),
+                            "weighted_vote_score": float(weighted_vote_score.strip() or 0.0),
+                            "playtime_forever": int(playtime_forever.strip() or 0),
+                            "timestamp_created": int(timestamp_created.strip() or 0),
+                            "review": review.strip()
+                        })
+                    elif len(row) == 5:
+                        # ✅ 타임스탬프가 누락된 경우 현재 시간 사용
+                        app_id, voted_up, weighted_vote_score, playtime_forever, review = row
+                        timestamp_created = int(time.time())  # 현재 시간 사용
+                        reviews.append({
+                            "app_id": int(app_id.strip() or 0),
+                            "voted_up": int(voted_up.strip() or 0),
+                            "weighted_vote_score": float(weighted_vote_score.strip() or 0.0),
+                            "playtime_forever": int(playtime_forever.strip() or 0),
+                            "timestamp_created": timestamp_created,
+                            "review": review.strip()
+                        })
+                    else:
+                        print(f"⚠️ 필드 개수 오류 - {row}")
                 else:
                     app_id, voted_up, weighted_vote_score, playtime_forever = row
                     reviews.append({
@@ -72,10 +90,13 @@ def main():
     update_dict = {app_id: {"name": name, "update_dates": get_updates(app_id)} for name, app_id in codes.items() if get_updates(app_id)}
     save_updates(update_dict)
 
+
+    run_review()
+
     # 리뷰 데이터 수집 및 분석
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     filtered_dir = os.path.join(BASE_DIR, "steamAPI", "filtered")
-    unfiltered_dir = os.path.join(BASE_DIR, "steamAPI", "unfiltered")
+    unfiltered_dir = os.path.join(BASE_DIR,"steamAPI", "unfiltered")
 
     print(f"📂 필터된 리뷰 폴더: {filtered_dir}")
     print(f"📂 필터되지 않은 리뷰 폴더: {unfiltered_dir}")
@@ -95,12 +116,16 @@ def main():
                 for i, review in enumerate(filtered_reviews):
                     sentiment_label = analyzed_reviews[i]["label"]
                     sentiment_score = 1.0 if sentiment_label == 1 else 0.0
-                    review_date = datetime.now().strftime("%Y-%m")
+
+                    # ✅ 리뷰의 생성일을 year-month 형식으로 변환
+                    review_date = datetime.fromtimestamp(review["timestamp_created"], tz=timezone.utc).strftime("%Y-%m")
+
                     final_score = calculate_final_score(
                         voted_up=review["voted_up"],
                         weighted_vote_score=review["weighted_vote_score"],
                         sentiment_score=sentiment_score
                     )
+
                     score_data = {
                         "app_id": review["app_id"],
                         "year_month": review_date,
