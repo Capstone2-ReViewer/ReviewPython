@@ -19,8 +19,8 @@ def calculate_final_score(voted_up, weighted_vote_score, sentiment_score):
 
     score = (
         (voted_up * 0.4) +
-        (weighted_vote_score * 0.2) +
-        (sentiment_score * 0.4)
+        (weighted_vote_score * 0.3) +
+        (sentiment_score * 0.3)
     ) * 100
 
     if score < 0:
@@ -105,51 +105,14 @@ def main():
         print(f"🎮 {name} ({app_id}) 데이터 처리 중...")
         all_scores = []
 
-        # 필터된 리뷰 처리
+        # 필터된 리뷰 처리 (기본 0.5 점수)
         filtered_file = os.path.join(filtered_dir, f"{app_id}.csv")
         if os.path.exists(filtered_file):
             filtered_reviews = load_reviews_from_csv(filtered_file, include_text=True)
             if filtered_reviews:
-                review_texts = [review["review"] for review in filtered_reviews]
-                analyzed_reviews = analyze_sentiment_kcbert(review_texts)
-
-                for i, review in enumerate(filtered_reviews):
-                    sentiment_label = analyzed_reviews[i]["label"]
-                    sentiment_score = 1.0 if sentiment_label == 1 else 0.0
-
-                    # ✅ 리뷰의 생성일을 year-month 형식으로 변환
+                for review in filtered_reviews:
                     review_date = datetime.fromtimestamp(review["timestamp_created"], tz=timezone.utc).strftime("%Y-%m")
 
-                    final_score = calculate_final_score(
-                        voted_up=review["voted_up"],
-                        weighted_vote_score=review["weighted_vote_score"],
-                        sentiment_score=sentiment_score
-                    )
-
-                    score_data = {
-                        "app_id": review["app_id"],
-                        "year_month": review_date,
-                        "final_score": final_score,
-                        "playtime_forever": review["playtime_forever"]
-                    }
-
-                    # ✅ 저장 전 데이터 확인
-                    all_scores.append(score_data)
-            else:
-                print(f"⚠️ {app_id} (필터된) 저장할 리뷰 데이터가 없습니다.")
-        else:
-            print(f"⚠️ {app_id} 필터된 리뷰 파일이 존재하지 않습니다.")
-
-        # 필터되지 않은 리뷰 처리
-        unfiltered_file = os.path.join(unfiltered_dir, f"{app_id}.csv")
-        if os.path.exists(unfiltered_file):
-            unfiltered_reviews = load_reviews_from_csv(unfiltered_file, include_text=True)
-            if unfiltered_reviews:
-                for review in unfiltered_reviews:
-                    # ✅ 리뷰의 생성일을 year-month 형식으로 변환
-                    review_date = datetime.fromtimestamp(review["timestamp_created"], tz=timezone.utc).strftime("%Y-%m")
-
-                    # 기본 점수 (0.5)로 처리
                     final_score = calculate_final_score(
                         voted_up=review["voted_up"],
                         weighted_vote_score=review["weighted_vote_score"],
@@ -163,8 +126,44 @@ def main():
                         "playtime_forever": review["playtime_forever"]
                     }
 
-                    # ✅ 저장 전 데이터 확인
                     all_scores.append(score_data)
+            else:
+                print(f"⚠️ {app_id} (필터된) 저장할 리뷰 데이터가 없습니다.")
+        else:
+            print(f"⚠️ {app_id} 필터된 리뷰 파일이 존재하지 않습니다.")
+
+        # 필터되지 않은 리뷰 처리
+        # 필터되지 않은 리뷰 처리 (KcBERT 감성 분석)
+        unfiltered_file = os.path.join(unfiltered_dir, f"{app_id}.csv")
+        if os.path.exists(unfiltered_file):
+            unfiltered_reviews = load_reviews_from_csv(unfiltered_file, include_text=True)
+            if unfiltered_reviews:
+                review_texts = [review["review"] for review in unfiltered_reviews]
+                analyzed_reviews = analyze_sentiment_kcbert(review_texts)
+
+                for i, review in enumerate(unfiltered_reviews):
+                    # ✅ KcBERT의 confidence 값 사용
+                    sentiment_score = analyzed_reviews[i]["confidence"]  # 0.0 ~ 1.0 사이의 확률
+
+                    # ✅ 리뷰의 생성일을 year-month 형식으로 변환
+                    review_date = datetime.fromtimestamp(review["timestamp_created"], tz=timezone.utc).strftime("%Y-%m")
+
+                    # 최종 점수 계산
+                    final_score = calculate_final_score(
+                        voted_up=review["voted_up"],
+                        weighted_vote_score=review["weighted_vote_score"],
+                        sentiment_score=sentiment_score
+                    )
+
+                    score_data = {
+                        "app_id": review["app_id"],
+                        "year_month": review_date,
+                        "final_score": final_score,
+                        "playtime_forever": review["playtime_forever"]
+                    }
+
+                    all_scores.append(score_data)
+
             else:
                 print(f"⚠️ {app_id} (필터되지 않은) 저장할 리뷰 데이터가 없습니다.")
         else:
