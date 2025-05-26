@@ -2,9 +2,10 @@ from steamAPI.game_enum import get_game_codes
 from steamAPI.game_info import get_game_info
 from steamAPI.update_dates import get_updates
 from steamAPI.review import run_review
-from save_to_db import save_game_info, save_updates, save_score_playtime
+from save_to_db import save_game_info, save_updates, save_score_playtime, save_keyword
 from topic.kcBert import analyze_sentiment_kcbert
 from datetime import datetime, timezone
+from topic.keword_konlpy import run_keyword
 
 import time
 import os
@@ -79,19 +80,20 @@ def load_reviews_from_csv(file_path, include_text=True):
 
 
 def main():
+
     # 게임 코드 로드
     codes = get_game_codes()
 
     # 게임 정보 수집 및 저장
-    #game_info_dict = {app_id: get_game_info(app_id) for name, app_id in codes.items() if get_game_info(app_id)}
-    #save_game_info(game_info_dict)
+    game_info_dict = {app_id: get_game_info(app_id) for name, app_id in codes.items() if get_game_info(app_id)}
+    save_game_info(game_info_dict)
 
     # 업데이트 내역 수집 및 저장
-    #update_dict = {app_id: {"name": name, "update_dates": get_updates(app_id)} for name, app_id in codes.items() if get_updates(app_id)}
-    #save_updates(update_dict)
+    update_dict = {app_id: {"name": name, "update_dates": get_updates(app_id)} for name, app_id in codes.items() if get_updates(app_id)}
+    save_updates(update_dict)
 
 
-    #run_review()
+    run_review()
 
     # 리뷰 데이터 수집 및 분석
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -177,6 +179,10 @@ def main():
             print(f"⚠️ {name} ({app_id}) 저장할 데이터가 없습니다.")
 
     print("\n🚀 모든 데이터 저장 완료!")
+
+
+    keword_data = run_keyword()
+    save_keyword(keword_data)
 
 
 # 실행 예시

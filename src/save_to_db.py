@@ -1,5 +1,5 @@
 from pymongo import MongoClient
-import pymongo  # ✅ pymongo 추가
+import pymongo
 import hashlib
 
 # ✅ MongoDB 연결
@@ -8,6 +8,7 @@ db = client["steam"]
 collection_game = db["game_info"]
 collection_update = db["updates"]
 collection_score = db["score_playtime"]
+collection_keyword = db["keywords"]  # ✅ 새로운 키워드 컬렉션 추가
 
 def save_game_info(game_info_dict):
     for app_id, game_info in game_info_dict.items():
@@ -39,7 +40,6 @@ def save_score_playtime(score_data_list):
         print("⚠️ 저장할 데이터가 없습니다.")
         return
 
-    # 데이터 분할 저장
     bulk_operations = []
     for score_data in score_data_list:
         app_id = score_data.get("app_id")
@@ -47,17 +47,14 @@ def save_score_playtime(score_data_list):
         final_score = score_data.get("final_score")
         playtime_forever = score_data.get("playtime_forever", 0)
 
-        # ✅ 고유 ID 생성 (해시 사용)
         unique_string = f"{app_id}_{year_month}_{playtime_forever}_{final_score}"
         unique_id = hashlib.sha1(unique_string.encode()).hexdigest()
 
-        # ✅ 저장 데이터 확인
         print(f"📝 저장할 개별 데이터: {score_data}")
 
-        # MongoDB에 데이터 저장 (upsert)
         bulk_operations.append(
             pymongo.UpdateOne(
-                {"_id": unique_id},  # ✅ 고유 ID 사용
+                {"_id": unique_id},
                 {"$set": {
                     "app_id": app_id,
                     "year_month": year_month,
@@ -68,11 +65,44 @@ def save_score_playtime(score_data_list):
             )
         )
 
-    # Bulk Write 실행
     if bulk_operations:
         result = collection_score.bulk_write(bulk_operations)
         print(f"✅ {result.upserted_count + result.modified_count}개의 데이터 저장 완료")
 
     print("\n🚀 모든 점수 데이터 저장 완료!")
 
-    print("\n🚀 모든 점수 데이터 저장 완료!")
+# ✅ 키워드 저장 함수
+
+def save_keyword(keyword_data_list):
+    if not keyword_data_list:
+        print("⚠️ 저장할 키워드가 없습니다.")
+        return
+
+    bulk_ops = []
+    for item in keyword_data_list:
+        app_id = item["app_id"]
+        sentiment = item["sentiment"]
+        keyword = item["keyword"]
+        count = item["count"]
+
+        unique_string = f"{app_id}_{sentiment}_{keyword}"
+        unique_id = hashlib.sha1(unique_string.encode()).hexdigest()
+
+        bulk_ops.append(
+            pymongo.UpdateOne(
+                {"_id": unique_id},
+                {"$set": {
+                    "app_id": app_id,
+                    "sentiment": sentiment,
+                    "keyword": keyword,
+                    "count": count
+                }},
+                upsert=True
+            )
+        )
+
+    if bulk_ops:
+        result = collection_keyword.bulk_write(bulk_ops)
+        print(f"✅ 키워드 {result.upserted_count + result.modified_count}개 저장 완료")
+    else:
+        print("⚠️ 키워드 저장 작업 없음")

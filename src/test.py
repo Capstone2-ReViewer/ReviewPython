@@ -1,61 +1,76 @@
-import requests
-import time
-from datetime import datetime, timezone
+import os
+import pandas as pd
+from konlpy.tag import Okt
+from collections import Counter
 
-APP_ID = 271590  # GTA5
-LANGUAGE = "korean"
-DAY_RANGE = 730  # 2년
+# === 경로 설정 ===
+filtered_dir = r"C:\Users\rhkda\PycharmProjects\PythonProject\src\steamAPI\filtered"
+output_path = r"C:\Users\rhkda\PycharmProjects\PythonProject\bertopic_output\all_topics.csv"
 
-def fetch_recent_reviews(app_id, language="korean", day_range=730):
-    seen_review_ids = set()
-    cursor = "*"
-    total_reviews = 0
+# === 키워드 필터 기준 ===
+positive_keywords = ["플레이", "스토리", "모드", "사람", "재미", "시간", "진짜", "친구", "추천", "정말",
+    "무기", "그래픽", "유저", "난이도", "처음", "엔딩", "컨텐츠", "시작", "보스", "장점",
+    "몬스터", "월드", "멀티", "소울", "서버", "전작", "뉴비", "힐링", "진행", "전투",
+    "퀘스트", "사양", "스팀", "업데이트", "온라인", "할인", "생존", "장비", "혼자", "평가",
+    "메인", "무료", "입문", "탐험", "시스템", "캐릭터", "한글화", "연출", "매력", "조작"]
 
-    while True:
-        url = (
-            f"https://store.steampowered.com/appreviews/{app_id}"
-            f"?json=1&language={language}&day_range={day_range}&filter=all&review_type=all"
-            f"&purchase_type=all&num_per_page=100&cursor={cursor}"
-        )
+negative_keywords = ["씨발", "버그", "진짜", "서버", "플레이", "유저", "패드", "사람", "시간", "병신",
+    "새끼", "재미", "시발", "문제", "스토리", "해킹", "모드", "계정", "친구", "생존자",
+    "존나", "살인마", "스팀", "심즈", "문명", "시작", "업데이트", "로딩", "난이도", "스킨",
+    "처음", "쓰레기", "짱깨", "패치", "소울", "그래픽", "망겜", "컨텐츠", "진행", "전투",
+    "최적화", "프레임", "오류", "반복", "강제", "과금", "불편", "불안정", "욕설", "튕김"]
 
-        res = requests.get(url)
-        if res.status_code != 200:
-            print(f"❌ 요청 실패: {res.status_code}")
-            break
+EXCLUDE = set(positive_keywords + negative_keywords)
 
-        data = res.json()
-        reviews = data.get("reviews", [])
-        cursor = data.get("cursor", "*")
+# === 리뷰 필터 함수 ===
+def filter_reviews(df, voted_up, keyword_list):
+    sub = df[df["voted_up"] == voted_up].copy()
+    if "review" not in sub.columns:
+        return []
+    sub = sub[sub["review"].notna()]
+    sub["review"] = sub["review"].astype(str)
+    filtered = sub[sub["review"].apply(lambda x: any(k in x for k in keyword_list))]
+    print(f"[DEBUG] voted_up={voted_up} 리뷰 수: {len(sub)} → 필터 통과: {len(filtered)}")
+    if len(filtered) <= 5:
+        return []
+    return filtered["review"].tolist()
 
-        # 더 이상 가져올 리뷰가 없으면 종료
-        if not reviews or cursor == "*":
-            break
+# === 키워드 추출 ===
+okt = Okt()
+all_counts = []
 
-        for r in reviews:
-            review_id = r.get("recommendationid")
-            if review_id in seen_review_ids:
-                continue
+for filename in os.listdir(filtered_dir):
+    if not filename.endswith(".csv"):
+        continue
+    app_id = filename.replace(".csv", "")
+    path = os.path.join(filtered_dir, filename)
+    try:
+        df = pd.read_csv(path)
+    except Exception as e:
+        print(f"❌ {app_id} 로드 실패: {e}")
+        continue
 
-            seen_review_ids.add(review_id)
+    if "review" not in df.columns or "voted_up" not in df.columns:
+        print(f"⚠️ {app_id} 누락 컬럼. 스킵 → {df.columns.tolist()}")
+        continue
 
-            # 리뷰 정보
-            timestamp_created = r.get("timestamp_created", 0)
-            date_str = datetime.fromtimestamp(timestamp_created, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            text = r.get("review", "").strip()
-            voted_up = r.get("voted_up")
-            playtime_forever = r.get("author", {}).get("playtime_forever", 0)
-            weighted_vote_score = r.get("weighted_vote_score", 0.5)
+    df["review"] = df["review"].astype(str)
 
-            print(f"📝 {date_str} | 추천 여부: {voted_up} | 점수: {weighted_vote_score} | 플레이타임: {playtime_forever}분")
-            print(f"리뷰: {text}")
-            print("-" * 80)
+    for sentiment, reviews in [("positive", filter_reviews(df, 1, positive_keywords)),
+                                ("negative", filter_reviews(df, 0, negative_keywords))]:
+        tokens = []
+        for review in reviews:
+            nouns = okt.nouns(review)
+            nouns = [n for n in nouns if len(n) > 1 and n not in EXCLUDE]
+            tokens.extend(nouns)
 
-            total_reviews += 1
+        counter = Counter(tokens)
+        for keyword, count in counter.items():
+            all_counts.append({"app_id": app_id, "sentiment": sentiment, "keyword": keyword, "count": count})
 
-        time.sleep(0.5)  # 딜레이 추가
-
-    print(f"\n🚀 총 {total_reviews}개의 리뷰 수집 완료")
-
-
-if __name__ == "__main__":
-    fetch_recent_reviews(APP_ID, language=LANGUAGE, day_range=DAY_RANGE)
+# === 저장 ===
+if all_counts:
+    pd.DataFrame(all_counts).to_csv(output_path, index=False, encoding="utf-8-sig")
+    print(f"\n✅ 키워드 데이터를 하나의 파일로 저장 완료 → {output_path}")
+else:
+    print("⚠️ 저장할 키워드 데이터가 없습니다.")
