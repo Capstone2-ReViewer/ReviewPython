@@ -7,13 +7,13 @@ from steamAPI.game_enum import get_game_codes
 okt = Okt()
 
 EXCLUDE = set([
-    "플레이", "스토리", "모드", "사람", "재미", "시간", "진짜", "친구", "추천", "정말",
-    "무기", "그래픽", "유저", "난이도", "처음", "엔딩", "컨텐츠", "시작", "보스", "장점",
+    "스토리", "모드", "사람", "재미", "시간", "친구", "추천",
+    "무기", "그래픽", "유저", "난이도", "처음", "엔딩", "컨텐츠", "시작", "보스",
     "몬스터", "월드", "멀티", "소울", "서버", "전작", "뉴비", "힐링", "진행", "전투",
-    "퀘스트", "사양", "스팀", "업데이트", "온라인", "할인", "생존", "장비", "혼자", "평가",
+    "퀘스트", "사양", "업데이트", "온라인", "할인", "생존", "장비", "혼자", "평가",
     "메인", "무료", "입문", "탐험", "시스템", "캐릭터", "한글화", "연출", "매력", "조작",
-    "씨발", "버그", "패드", "병신", "새끼", "시발", "문제", "해킹", "계정", "생존자",
-    "존나", "살인마", "심즈", "문명", "로딩", "스킨", "쓰레기", "짱깨", "패치", "망겜",
+    "씨발", "버그", "패드", "병신", "새끼", "시발", "해킹", "계정", "생존자",
+    "살인마", "심즈", "문명", "로딩", "스킨", "쓰레기", "짱깨", "패치", "망겜",
     "최적화", "프레임", "오류", "반복", "강제", "과금", "불편", "불안정", "욕설", "튕김"
 ])
 
@@ -33,13 +33,16 @@ def extract_keywords_from_reviews(app_id: int, df: pd.DataFrame):
             tokens.extend(filtered)
         counter = Counter(tokens)
         top_keywords = counter.most_common(3)  # ✅ 상위 3개만 추출
+        seen = set()
         for keyword, count in top_keywords:
-            result.append({
-                "app_id": app_id,
-                "sentiment": sentiment_name,
-                "keyword": keyword,
-                "count": count
-            })
+            if keyword not in seen and count > 1:  # ✅ count가 1인 키워드는 제외
+                seen.add(keyword)
+                result.append({
+                    "app_id": app_id,
+                    "sentiment": sentiment_name,
+                    "keyword": keyword,
+                    "count": count
+                })
     return result
 
 

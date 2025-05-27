@@ -50,8 +50,6 @@ def save_score_playtime(score_data_list):
         unique_string = f"{app_id}_{year_month}_{playtime_forever}_{final_score}"
         unique_id = hashlib.sha1(unique_string.encode()).hexdigest()
 
-        print(f"📝 저장할 개별 데이터: {score_data}")
-
         bulk_operations.append(
             pymongo.UpdateOne(
                 {"_id": unique_id},
